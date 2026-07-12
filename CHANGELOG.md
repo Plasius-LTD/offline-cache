@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Refuse storage and reuse of requests or responses carrying RFC 9111
+  `Cache-Control: no-store`, including generated service-worker strategies and
+  asset-pack warming.
+
 - **Added**
   - (placeholder)
 

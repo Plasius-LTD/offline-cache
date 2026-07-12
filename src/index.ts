@@ -196,6 +196,17 @@ function getRequestMethod(input: RequestInfo | URL, init?: RequestInit): string 
     .toUpperCase();
 }
 
+function hasNoStore(headers: Headers): boolean {
+  return (headers.get("cache-control") ?? "")
+    .split(",")
+    .some(directive => directive.trim().split("=", 1)[0]?.toLowerCase() === "no-store");
+}
+
+function getRequestHeaders(input: RequestInfo | URL, init?: RequestInit): Headers {
+  if (init?.headers) return new Headers(init.headers);
+  return typeof input === "object" && "headers" in input ? new Headers(input.headers) : new Headers();
+}
+
 function pathStartsWith(pathname: string, prefixes: readonly string[] = []): boolean {
   return prefixes.some(prefix => pathname === prefix || pathname.startsWith(prefix));
 }
@@ -232,6 +243,9 @@ export function classifyOfflineCacheRequest(
   const method = getRequestMethod(input, init);
   if (method !== "GET" && method !== "HEAD") {
     return { cacheable: false, strategy: "no-cache", reason: "non-get-request" };
+  }
+  if (hasNoStore(getRequestHeaders(input, init))) {
+    return { cacheable: false, strategy: "no-cache", reason: "request-cache-control-no-store" };
   }
 
   const url = toUrl(input, runtime);
@@ -423,6 +437,12 @@ export async function warmAssetPack(
         continue;
       }
 
+      if (hasNoStore(response.headers)) {
+        await cache.delete(url);
+        results.push({ url, cached: false, error: "cache-control-no-store" });
+        continue;
+      }
+
       await cache.put(url, response.clone());
       results.push({ url, cached: true });
     } catch (error) {
@@ -588,8 +608,10 @@ const NAVIGATION_FALLBACK_URL = ${fallbackUrl};
 
 const startsWithAny = (pathname, prefixes = []) => prefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix));
 const isDenied = (pathname) => startsWithAny(pathname, POLICY.deniedPathPrefixes || []);
+const hasNoStore = (headers) => (headers.get("cache-control") || "").split(",").some((directive) => directive.trim().split("=", 1)[0].toLowerCase() === "no-store");
 const classify = (request) => {
   if (request.method !== "GET" && request.method !== "HEAD") return { cacheable: false, strategy: "no-cache" };
+  if (hasNoStore(request.headers)) return { cacheable: false, strategy: "no-cache", reason: "request-cache-control-no-store" };
   const url = new URL(request.url);
   if (POLICY.sameOriginOnly !== false && url.origin !== self.location.origin) return { cacheable: false, strategy: "no-cache" };
   if (isDenied(url.pathname)) return { cacheable: false, strategy: "no-cache" };
@@ -615,17 +637,22 @@ self.addEventListener("activate", (event) => {
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
-  if (cached) return cached;
+  if (cached && !hasNoStore(cached.headers)) return cached;
+  if (cached) await cache.delete(request);
   const response = await fetch(request);
-  if (response.ok) await cache.put(request, response.clone());
+  if (response.ok && !hasNoStore(response.headers)) await cache.put(request, response.clone());
+  if (hasNoStore(response.headers)) await cache.delete(request);
   return response;
 }
 
 async function staleWhileRevalidate(request, cacheName) {
   const cache = await caches.open(cacheName);
-  const cached = (await cache.match(request)) || (await caches.match(request));
+  const candidate = await cache.match(request);
+  const cached = candidate && !hasNoStore(candidate.headers) ? candidate : undefined;
+  if (candidate && !cached) await cache.delete(request);
   const refresh = fetch(request).then((response) => {
-    if (response.ok) cache.put(request, response.clone());
+    if (response.ok && !hasNoStore(response.headers)) cache.put(request, response.clone());
+    if (hasNoStore(response.headers)) cache.delete(request);
     return response;
   });
   return cached || refresh;
@@ -635,10 +662,15 @@ async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   try {
     const response = await fetch(request);
-    if (response.ok) await cache.put(request, response.clone());
+    if (response.ok && !hasNoStore(response.headers)) await cache.put(request, response.clone());
+    if (hasNoStore(response.headers)) await cache.delete(request);
     return response;
   } catch (error) {
-    return (await cache.match(request)) || (await cache.match(NAVIGATION_FALLBACK_URL)) || Response.error();
+    const cached = await cache.match(request);
+    if (cached && !hasNoStore(cached.headers)) return cached;
+    if (cached) await cache.delete(request);
+    const fallback = await cache.match(NAVIGATION_FALLBACK_URL);
+    return fallback && !hasNoStore(fallback.headers) ? fallback : Response.error();
   }
 }
 
