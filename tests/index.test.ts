@@ -30,6 +30,11 @@ class MemoryCache {
         : input.url;
     this.entries.set(key, response);
   }
+
+  async delete(input: RequestInfo | URL): Promise<boolean> {
+    const key = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    return this.entries.delete(key);
+  }
 }
 
 class MemoryCacheStorage {
@@ -138,6 +143,15 @@ describe("offline cache request classifier", () => {
         runtime,
       ),
     ).toMatchObject({ cacheable: false, reason: "cross-origin" });
+
+    expect(
+      classifyOfflineCacheRequest(
+        "https://plasius.co.uk/assets/entry.js",
+        { headers: { "cache-control": "max-age=60, No-Store" } },
+        policy,
+        runtime,
+      ),
+    ).toMatchObject({ cacheable: false, reason: "request-cache-control-no-store" });
   });
 });
 
@@ -181,6 +195,24 @@ describe("asset pack cache", () => {
       status: "ready",
       cachedUrls: 2,
     });
+  });
+
+  it("does not store RFC 9111 no-store responses and removes stale copies", async () => {
+    const caches = new MemoryCacheStorage();
+    const cache = await caches.open(buildOfflineAssetCacheName(pack));
+    const firstUrl = new URL(pack.urls[0]!, runtime.location.origin).toString();
+    await cache.put(firstUrl, new Response("old", { status: 200 }));
+    const result = await warmAssetPack({ ...pack, urls: [pack.urls[0]!] }, {
+      caches: caches as unknown as CacheStorage,
+      fetch: vi.fn(async () => new Response("private", {
+        status: 200,
+        headers: { "Cache-Control": "private, no-store" },
+      })) as unknown as typeof fetch,
+      location: runtime.location,
+    });
+    expect(result).toMatchObject({ status: "error", cachedUrls: 0 });
+    expect(result.results[0]).toMatchObject({ cached: false, error: "cache-control-no-store" });
+    await expect(cache.match(firstUrl)).resolves.toBeUndefined();
   });
 
   it("returns unsupported or idle when cache primitives or URLs are missing", async () => {
@@ -414,5 +446,7 @@ describe("worker registration and script generation", () => {
     expect(script).toContain("publicApiPathPrefixes");
     expect(script).toContain("self.addEventListener(\"fetch\"");
     expect(script).toContain("caches.delete");
+    expect(script).toContain("hasNoStore");
+    expect(script).toContain("cache-control-no-store");
   });
 });

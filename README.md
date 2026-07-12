@@ -42,6 +42,15 @@ Use `classifyOfflineCacheRequest` in service workers to keep cache decisions
 explicit. The default policy caches public GET requests only and rejects
 authenticated, mutating, or sensitive API paths.
 
+Requests or responses containing the RFC 9111 `Cache-Control: no-store`
+directive are never stored or reused. The generated worker also removes legacy
+entries carrying that directive before serving them.
+
+Runtime rollout inherits `governance.rfc-compliance-remediation.enabled`.
+Enabled consumers use the corrected worker; rollback disables the flag and
+restores the prior worker registration. No-store responses have no permissive
+fallback because retaining them would violate the origin's storage directive.
+
 ## Validation
 
 ```bash
