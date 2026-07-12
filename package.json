@@ -1,6 +1,6 @@
 {
   "name": "@plasius/offline-cache",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Browser offline cache helpers for Plasius progressive public sites and demo asset packs.",
   "type": "module",
   "sideEffects": false,

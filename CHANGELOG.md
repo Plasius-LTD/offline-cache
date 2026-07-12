@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.1.1] - 2026-07-12
+
 - Refuse storage and reuse of requests or responses carrying RFC 9111
   `Cache-Control: no-store`, including generated service-worker strategies and
   asset-pack warming.
@@ -26,3 +40,4 @@
 
 
 [0.1.0]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.0
+[0.1.1]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.1
