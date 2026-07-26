@@ -89,6 +89,7 @@
     }
   ],
   "overrides": {
+    "brace-expansion": "^5.0.8",
     "minimatch": "^10.2.1",
     "tsup": {
       "esbuild": "0.28.1"
