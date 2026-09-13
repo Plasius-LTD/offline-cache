@@ -51,6 +51,7 @@ export interface OfflineCacheRequestPolicy {
   readonly sameOriginOnly?: boolean;
   readonly publicNavigationPaths?: readonly string[];
   readonly immutableAssetPathPrefixes?: readonly string[];
+  readonly immutableAssetPathPatterns?: readonly RegExp[];
   readonly publicAssetPathPrefixes?: readonly string[];
   readonly publicApiPathPrefixes?: readonly string[];
   readonly deniedPathPrefixes?: readonly string[];
@@ -94,6 +95,8 @@ export interface OfflineCacheOperationOptions extends OfflineCacheRuntime {
 }
 
 export interface OfflineCacheWorkerScriptOptions {
+  /** Require renewed host permission before any worker cache access (maximum 60 seconds). */
+  readonly requireConsent?: boolean;
   readonly cachePrefix?: string;
   readonly buildId: string;
   readonly policy: OfflineCacheRequestPolicy;
@@ -272,6 +275,10 @@ export function classifyOfflineCacheRequest(
     return { cacheable: false, strategy: "no-cache", reason: "denied-path-prefix" };
   }
 
+  if (policy.immutableAssetPathPatterns?.some(pattern => new RegExp(pattern.source, pattern.flags).test(pathname))) {
+    return { cacheable: true, strategy: "cache-first", reason: "immutable-asset-pattern", cacheBucket: "immutable" };
+  }
+
   if (pathStartsWith(pathname, policy.publicApiPathPrefixes)) {
     return {
       cacheable: true,
@@ -414,7 +421,12 @@ export async function warmAssetPack(
     };
   }
 
+  options.signal?.throwIfAborted();
   const cache = await cacheStorage.open(cacheName);
+  if (options.signal?.aborted) {
+    await cacheStorage.delete(cacheName);
+    options.signal.throwIfAborted();
+  }
   const results: OfflineCacheUrlResult[] = [];
 
   for (const rawUrl of pack.urls) {
@@ -425,8 +437,10 @@ export async function warmAssetPack(
         method: "GET",
         credentials: "same-origin",
         cache: "reload",
+        signal: options.signal,
       });
       const response = await fetchImpl(request);
+      options.signal?.throwIfAborted();
       if (!response.ok) {
         const existing = await cache.match(url);
         results.push({
@@ -446,6 +460,7 @@ export async function warmAssetPack(
       await cache.put(url, response.clone());
       results.push({ url, cached: true });
     } catch (error) {
+      options.signal?.throwIfAborted();
       const existing = await cache.match(url);
       const isOffline =
         typeof globalThis.navigator !== "undefined" && globalThis.navigator.onLine === false;
@@ -595,7 +610,10 @@ export function createOfflineCacheWorkerScript(
     options.cachePrefix ?? DEFAULT_OFFLINE_CACHE_PREFIX,
   );
   const buildId = sanitizeCacheSegment(options.buildId);
-  const policyJson = JSON.stringify(options.policy);
+  const policyJson = JSON.stringify({ ...options.policy,
+    immutableAssetPathPatterns: options.policy.immutableAssetPathPatterns?.map(pattern => ({ source: pattern.source, flags: pattern.flags })),
+    deniedPathPatterns: options.policy.deniedPathPatterns?.map(pattern => ({ source: pattern.source, flags: pattern.flags })),
+  });
   const fallbackUrl = JSON.stringify(options.navigationFallbackUrl ?? "/");
 
   return `
@@ -605,9 +623,31 @@ const APP_CACHE = CACHE_PREFIX + "-app-" + BUILD_ID;
 const PUBLIC_CACHE = CACHE_PREFIX + "-public-" + BUILD_ID;
 const POLICY = ${policyJson};
 const NAVIGATION_FALLBACK_URL = ${fallbackUrl};
+const REQUIRE_CONSENT = ${options.requireConsent === true};
+let permissionUntil = REQUIRE_CONSENT ? 0 : Infinity;
+let permissionGeneration = 0;
+const permitted = (generation) => generation === permissionGeneration && Date.now() < permissionUntil;
+async function discardCaches() {
+  const names = await caches.keys();
+  await Promise.all(names.filter(name => name.startsWith(CACHE_PREFIX + "-")).map(name => caches.delete(name)));
+}
+self.addEventListener("message", event => {
+  if (!REQUIRE_CONSENT || event.data?.type !== "plasius-offline-consent-v1") return;
+  try { if (new URL(event.source?.url).origin !== self.location.origin) return; } catch { return; }
+  const requested = event.data.allowedUntil;
+  permissionUntil = typeof requested === "number" && Number.isFinite(requested)
+    ? Math.min(requested, Date.now() + 60_000) : 0;
+  const disabled = permissionUntil <= Date.now();
+  if (disabled) permissionGeneration++;
+  event.waitUntil((async () => {
+    if (disabled) await discardCaches();
+    event.ports?.[0]?.postMessage({ type: "plasius-offline-consent-v1", disabled });
+  })());
+});
 
 const startsWithAny = (pathname, prefixes = []) => prefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix));
-const isDenied = (pathname) => startsWithAny(pathname, POLICY.deniedPathPrefixes || []);
+const matchesAny = (pathname, patterns = []) => patterns.some(pattern => new RegExp(pattern.source, pattern.flags).test(pathname));
+const isDenied = (pathname) => startsWithAny(pathname, POLICY.deniedPathPrefixes || []) || matchesAny(pathname, POLICY.deniedPathPatterns);
 const hasNoStore = (headers) => (headers.get("cache-control") || "").split(",").some((directive) => directive.trim().split("=", 1)[0].toLowerCase() === "no-store");
 const classify = (request) => {
   if (request.method !== "GET" && request.method !== "HEAD") return { cacheable: false, strategy: "no-cache" };
@@ -615,6 +655,7 @@ const classify = (request) => {
   const url = new URL(request.url);
   if (POLICY.sameOriginOnly !== false && url.origin !== self.location.origin) return { cacheable: false, strategy: "no-cache" };
   if (isDenied(url.pathname)) return { cacheable: false, strategy: "no-cache" };
+  if (matchesAny(url.pathname, POLICY.immutableAssetPathPatterns)) return { cacheable: true, strategy: "cache-first", cacheName: PUBLIC_CACHE };
   if (startsWithAny(url.pathname, POLICY.publicApiPathPrefixes || [])) return { cacheable: true, strategy: "stale-while-revalidate", cacheName: PUBLIC_CACHE };
   if (startsWithAny(url.pathname, POLICY.publicAssetPathPrefixes || [])) return { cacheable: true, strategy: "stale-while-revalidate", cacheName: PUBLIC_CACHE };
   if (startsWithAny(url.pathname, POLICY.immutableAssetPathPrefixes || [])) return { cacheable: true, strategy: "cache-first", cacheName: APP_CACHE };
@@ -634,52 +675,75 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-async function cacheFirst(request, cacheName) {
+async function openPermittedCache(cacheName, generation) {
+  if (!permitted(generation)) return null;
   const cache = await caches.open(cacheName);
+  if (!permitted(generation)) {
+    await caches.delete(cacheName);
+    return null;
+  }
+  return cache;
+}
+
+async function cacheFirst(request, cacheName, generation) {
+  const cache = await openPermittedCache(cacheName, generation);
+  if (!cache) return fetch(request);
   const cached = await cache.match(request);
+  if (!permitted(generation)) return fetch(request);
   if (cached && !hasNoStore(cached.headers)) return cached;
   if (cached) await cache.delete(request);
   const response = await fetch(request);
+  if (!permitted(generation)) return response;
   if (response.ok && !hasNoStore(response.headers)) await cache.put(request, response.clone());
   if (hasNoStore(response.headers)) await cache.delete(request);
   return response;
 }
 
-async function staleWhileRevalidate(request, cacheName) {
-  const cache = await caches.open(cacheName);
+async function staleWhileRevalidate(request, cacheName, generation) {
+  const cache = await openPermittedCache(cacheName, generation);
+  if (!cache) return fetch(request);
   const candidate = await cache.match(request);
+  if (!permitted(generation)) return fetch(request);
   const cached = candidate && !hasNoStore(candidate.headers) ? candidate : undefined;
   if (candidate && !cached) await cache.delete(request);
-  const refresh = fetch(request).then((response) => {
-    if (response.ok && !hasNoStore(response.headers)) cache.put(request, response.clone());
-    if (hasNoStore(response.headers)) cache.delete(request);
-    return response;
-  });
-  return cached || refresh;
-}
-
-async function networkFirst(request, cacheName) {
-  const cache = await caches.open(cacheName);
-  try {
-    const response = await fetch(request);
+  const refresh = fetch(request).then(async response => {
+    if (!permitted(generation)) return response;
     if (response.ok && !hasNoStore(response.headers)) await cache.put(request, response.clone());
     if (hasNoStore(response.headers)) await cache.delete(request);
     return response;
-  } catch (error) {
+  });
+  if (cached) void refresh.catch(() => undefined);
+  return cached || refresh;
+}
+
+async function networkFirst(request, cacheName, generation) {
+  const cache = await openPermittedCache(cacheName, generation);
+  if (!cache) return fetch(request);
+  try {
+    const response = await fetch(request);
+    if (!permitted(generation)) return response;
+    if (response.ok && !hasNoStore(response.headers)) await cache.put(request, response.clone());
+    if (hasNoStore(response.headers)) await cache.delete(request);
+    return response;
+  } catch {
+    if (!permitted(generation)) return Response.error();
     const cached = await cache.match(request);
+    if (!permitted(generation)) return Response.error();
     if (cached && !hasNoStore(cached.headers)) return cached;
     if (cached) await cache.delete(request);
     const fallback = await cache.match(NAVIGATION_FALLBACK_URL);
-    return fallback && !hasNoStore(fallback.headers) ? fallback : Response.error();
+    return permitted(generation) && fallback && !hasNoStore(fallback.headers) ? fallback : Response.error();
   }
 }
 
 self.addEventListener("fetch", (event) => {
+  const generation = permissionGeneration;
+  if (!permitted(generation)) return;
   const decision = classify(event.request);
   if (!decision.cacheable) return;
-  if (decision.strategy === "cache-first") event.respondWith(cacheFirst(event.request, decision.cacheName));
-  if (decision.strategy === "stale-while-revalidate") event.respondWith(staleWhileRevalidate(event.request, decision.cacheName));
-  if (decision.strategy === "network-first") event.respondWith(networkFirst(event.request, decision.cacheName));
+  if (decision.strategy === "cache-first") event.respondWith(cacheFirst(event.request, decision.cacheName, generation));
+  if (decision.strategy === "stale-while-revalidate") event.respondWith(staleWhileRevalidate(event.request, decision.cacheName, generation));
+  if (decision.strategy === "network-first") event.respondWith(networkFirst(event.request, decision.cacheName, generation));
 });
 `.trimStart();
 }

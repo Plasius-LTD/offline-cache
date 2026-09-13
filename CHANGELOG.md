@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Honour asset-pack abort signals for pending downloads and late cache writes.
+- Preserve exact immutable and denied path patterns in generated workers.
+
+- Add optional worker consent leases, acknowledged withdrawal and protection against late cache writes (#12).
+
 - **Added**
   - (placeholder)
 

@@ -450,3 +450,20 @@ describe("worker registration and script generation", () => {
     expect(script).toContain("cache-control-no-store");
   });
 });
+
+
+describe("asset pack withdrawal", () => {
+  it("aborts a pending download and does not persist its late response", async () => {
+    const caches = new MemoryCacheStorage();
+    const controller = new AbortController();
+    let complete!: (value: Response) => void;
+    const fetch = vi.fn((_request: RequestInfo | URL) => new Promise<Response>(resolve => { complete = resolve; }));
+    const promise = warmAssetPack({ id: "consent", revision: "1", urls: ["/assets/a", "/assets/b"] }, { ...runtime, caches: caches as unknown as CacheStorage, fetch, signal: controller.signal });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    controller.abort(); complete(new Response("late"));
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect((fetch.mock.calls[0]![0] as Request).signal.aborted).toBe(true);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect([...caches.stores.values()].every(cache => cache.entries.size === 0)).toBe(true);
+  });
+});

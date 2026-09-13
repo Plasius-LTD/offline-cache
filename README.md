@@ -80,3 +80,26 @@ npm 11.6.2 client. It is token-free and proceeds only while the prepared SHA
 is the exact `main` head after successful push-triggered CI. Do not dispatch CD
 until the npm trusted-publisher binding is verified.
 <!-- END PLASIUS RELEASE INTEGRITY -->
+
+## Consent-aware workers
+
+Set `requireConsent: true` when generating a worker for optional caching. It starts
+without permission and accepts only same-origin window messages of type
+`plasius-offline-consent-v1` with `allowedUntil` (epoch milliseconds). Grants last
+at most 60 seconds and must be renewed by a host that still has valid consent and
+remote permission. A worker restart starts denied; host permission must be renewed.
+Send `allowedUntil: 0` on withdrawal with a MessageChannel to receive the matching
+`{ type, disabled: true }` acknowledgement after scoped cache deletion. Pending
+responses cannot repopulate discarded caches. Unregister the worker afterwards.
+Unregistration alone does not stop an already-controlling worker. Legacy workers
+without this protocol must be replaced or detached through navigation before the
+host can claim immediate revocation. Offline availability is limited to a current
+permission lease; exhausted leases fail closed. Existing generation behaviour is
+unchanged when `requireConsent` is omitted.
+
+Use `immutableAssetPathPatterns` for exact content-addressed asset paths. Denied
+paths always win; host and generated worker preserve regex source and flags.
+
+`warmAssetPack` propagates its `signal` to downloads and rejects with the abort
+reason before further cache access after cancellation, including late responses.
+Hosts should treat consent cancellation as a normal stop, not a renderer failure.
