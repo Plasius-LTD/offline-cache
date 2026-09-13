@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.1.2] - 2026-09-13
+
 - Honour asset-pack abort signals for pending downloads and late cache writes.
 - Preserve exact immutable and denied path patterns in generated workers.
 
@@ -52,3 +66,4 @@
 
 [0.1.0]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.0
 [0.1.1]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.1
+[0.1.2]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.2
