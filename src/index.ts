@@ -421,7 +421,12 @@ export async function warmAssetPack(
     };
   }
 
+  options.signal?.throwIfAborted();
   const cache = await cacheStorage.open(cacheName);
+  if (options.signal?.aborted) {
+    await cacheStorage.delete(cacheName);
+    options.signal.throwIfAborted();
+  }
   const results: OfflineCacheUrlResult[] = [];
 
   for (const rawUrl of pack.urls) {
@@ -432,8 +437,10 @@ export async function warmAssetPack(
         method: "GET",
         credentials: "same-origin",
         cache: "reload",
+        signal: options.signal,
       });
       const response = await fetchImpl(request);
+      options.signal?.throwIfAborted();
       if (!response.ok) {
         const existing = await cache.match(url);
         results.push({
@@ -453,6 +460,7 @@ export async function warmAssetPack(
       await cache.put(url, response.clone());
       results.push({ url, cached: true });
     } catch (error) {
+      options.signal?.throwIfAborted();
       const existing = await cache.match(url);
       const isOffline =
         typeof globalThis.navigator !== "undefined" && globalThis.navigator.onLine === false;

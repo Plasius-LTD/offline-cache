@@ -99,3 +99,7 @@ unchanged when `requireConsent` is omitted.
 
 Use `immutableAssetPathPatterns` for exact content-addressed asset paths. Denied
 paths always win; host and generated worker preserve regex source and flags.
+
+`warmAssetPack` propagates its `signal` to downloads and rejects with the abort
+reason before further cache access after cancellation, including late responses.
+Hosts should treat consent cancellation as a normal stop, not a renderer failure.
