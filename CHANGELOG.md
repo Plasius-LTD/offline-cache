@@ -16,6 +16,7 @@
   - (placeholder)
 
 - **Security**
+  - Updated Vitest and its coverage adapter to 4.1.11, clearing the patched redirect-mock path traversal advisory.
   - (placeholder)
 
 ## [0.1.2] - 2026-09-13
