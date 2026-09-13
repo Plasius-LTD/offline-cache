@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add optional worker consent leases, acknowledged withdrawal and protection against late cache writes (#12).
+
 - **Added**
   - (placeholder)
 
