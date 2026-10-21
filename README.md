@@ -72,13 +72,37 @@ npm run pack:check
 ## Release integrity
 
 CI keeps the administrative contributor registry outside Git and npm package
-artifacts using exact, case-normalised path checks. CI runs on approved
-GitHub-hosted runners for same-repository pull requests and `main`, with
-package-manager cache finalization disabled; fork PR code is denied.
+artifacts using exact, case-normalised path checks. CI runs only for canonical
+repository branch pushes on `Public CI - Quarantined` with literal
+`[self-hosted, Linux, X64]` labels. Pull-request and manual triggers are absent.
+Both jobs check the repository and event, have bounded timeouts, persist no
+checkout credentials and disable package-manager caching. There is no hosted CI
+fallback or caller-selected runner. Clean installation, lint, types, runtime
+audit, build, 80% line coverage and final package-manifest checks remain required.
 Publication uses the GitHub-hosted `production` job with Node 24 and a pinned
 npm 11.6.2 client. It is token-free and proceeds only while the prepared SHA
 is the exact `main` head after successful push-triggered CI. Do not dispatch CD
 until the npm trusted-publisher binding is verified.
+
+An authorised runner-group operator must review each source branch before adding
+only `Plasius-LTD/offline-cache/.github/workflows/ci.yml@refs/heads/<branch>`
+to the existing workflow allowlist. Preserve repository selection, public access
+policy and unrelated refs. Keep the existing `main` admission.
+Review the release-preparation App's exact metadata diff before admitting its
+branch. Run metadata CI and required reviews/checks before merge where repository
+policy holds the PR open. Existing preparation can auto-merge under a policy
+without required checks; record that accurately and verify successful metadata
+and exact-main CI before publication. If the App deleted the branch, restore only
+its reviewed, unchanged PR-head SHA to the same absent branch by an ordinary
+non-force push so its queued CI can execute. Remove temporary admissions and
+branches after successful checks. Missing access is a blocker; never widen
+admission with wildcards or change production/protection settings to pass.
+
+The remote `platform.public-artifact-integrity.enabled` flag controls restoration
+of public distribution. Mandatory integrity checks remain unconditional when it
+is enabled, disabled or rolled back. Rollback disables the affected workflow or
+distribution channel and removes temporary admissions; it never restores the
+administrative path or hosted CI. No capability is introduced.
 <!-- END PLASIUS RELEASE INTEGRITY -->
 
 ## Consent-aware workers
