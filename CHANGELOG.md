@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Restore approved self-hosted, trusted-push CI with isolated runner admission,
+  clean installation, bounded jobs and final package-manifest verification.
+
 - **Added**
   - (placeholder)
 

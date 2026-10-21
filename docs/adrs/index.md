@@ -2,4 +2,5 @@
 
 - [ADR 0001: Browser CacheStorage Package Boundary](./adr-0001-browser-cache-storage-package-boundary.md)
 - [ADR-0002: Hosted OIDC Package Publication](./adr-0002-hosted-oidc-package-publication.md)
+- [ADR-0003: Approved Self-Hosted CI and Hosted Publication](./adr-0003-approved-self-hosted-ci.md)
 - [ADR 0004: Worker consent lifecycle](./adr-0004-worker-consent-lifecycle.md)
