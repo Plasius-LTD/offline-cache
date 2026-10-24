@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.1.11] - 2026-10-24
+
 - Keep stale cache refresh fetches and cache write/eviction work in the fetch-event lifetime without delaying cached responses or extending consent (Task #28).
 
 - **Added**
@@ -209,3 +223,4 @@
 [0.1.8]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.8
 [0.1.9]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.9
 [0.1.10]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.10
+[0.1.11]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.11
