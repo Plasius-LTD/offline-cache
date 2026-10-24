@@ -20,7 +20,7 @@ function worker(requireConsent = true) {
   };
   const request = (path = "/assets/test.js", mode = "cors", headers = new Headers()) => {
     let response: Promise<Response> | undefined;
-    listeners.fetch!({ request: { url: "https://example.invalid" + path, method: "GET", mode, headers }, respondWith: (p: Promise<Response>) => { response = p; } });
+    listeners.fetch!({ request: { url: "https://example.invalid" + path, method: "GET", mode, headers }, respondWith: (p: Promise<Response>) => { response = p; }, waitUntil: (_promise: Promise<unknown>) => undefined });
     return response;
   };
   return { cache, caches, fetch, message, request, expire: () => { time = 100_000; } };
