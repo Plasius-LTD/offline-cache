@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve successful online responses when optional worker cache operations reject, with controlled offline errors and unchanged consent/no-store safeguards (Task #27).
+
 - **Added**
   - (placeholder)
 
