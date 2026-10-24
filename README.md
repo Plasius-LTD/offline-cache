@@ -140,8 +140,18 @@ may be returned; otherwise the worker returns `Response.error()`.
 No-store entries remain ineligible even if eviction fails. Consent denial,
 expiry and withdrawal still prohibit cache reuse/updates. Storage failures do not
 produce provider-error logs or change the host's cleanup acknowledgement duties.
-This handles rejected storage operations; permanently pending operations and
-browser fetch lifetimes are unchanged. Stale refresh event-lifetime work is
-tracked separately. Hosts continue to compose stored
+This handles rejected storage operations; permanently pending operations remain
+subject to browser limits. Hosts continue to compose stored
 `site.privacy.optional-processing.enabled` / `site.offline-cache.enabled` with
 visitor consent, and withdraw/unregister the worker when disabled.
+
+Stale-while-revalidate workers synchronously register `event.waitUntil` for the
+refresh, including cache lookup, network fetch and cache write/no-store eviction.
+A valid cached response is served without waiting for that background work. The
+lifetime promise settles after the refresh update completes, including rejected
+network/storage operations. It does not extend consent: withdrawal or lease expiry
+while the network is pending still prevents a late write, even after a new grant.
+A restarted consent-aware worker still starts denied and needs a new host lease.
+Browser shutdown/termination behavior and the built site worker are qualified in
+the host adoption task; a lifetime promise does not guarantee completion after
+browser shutdown.

@@ -721,18 +721,21 @@ async function cacheFirst(request, cacheName, generation) {
   return response;
 }
 
-async function staleWhileRevalidate(request, cacheName, generation) {
-  const cache = await openPermittedCache(cacheName, generation);
-  const cached = await readPermittedEntry(cache, request, generation);
-  const refresh = fetchOrError(request).then(async response => {
+function staleWhileRevalidate(request, cacheName, generation) {
+  const lookup = (async () => {
+    const cache = await openPermittedCache(cacheName, generation);
+    const cached = await readPermittedEntry(cache, request, generation);
+    return { cache, cached };
+  })();
+  const refresh = lookup.then(async ({ cache }) => {
+    const response = await fetchOrError(request);
     await updateOptionalEntry(cache, request, response, generation);
     return response;
   });
-  if (cached && permitted(generation)) {
-    void refresh.catch(() => undefined);
-    return cached;
-  }
-  return refresh;
+  return {
+    response: lookup.then(({ cached }) => cached && permitted(generation) ? cached : refresh),
+    completion: refresh.then(() => undefined, () => undefined),
+  };
 }
 
 async function networkFirst(request, cacheName, generation) {
@@ -756,7 +759,11 @@ self.addEventListener("fetch", (event) => {
   const decision = classify(event.request);
   if (!decision.cacheable) return;
   if (decision.strategy === "cache-first") event.respondWith(cacheFirst(event.request, decision.cacheName, generation));
-  if (decision.strategy === "stale-while-revalidate") event.respondWith(staleWhileRevalidate(event.request, decision.cacheName, generation));
+  if (decision.strategy === "stale-while-revalidate") {
+    const { response, completion } = staleWhileRevalidate(event.request, decision.cacheName, generation);
+    event.waitUntil(completion);
+    event.respondWith(response);
+  }
   if (decision.strategy === "network-first") event.respondWith(networkFirst(event.request, decision.cacheName, generation));
 });
 `.trimStart();

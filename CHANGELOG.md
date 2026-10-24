@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep stale cache refresh fetches and cache write/eviction work in the fetch-event lifetime without delaying cached responses or extending consent (Task #28).
+
 - **Added**
   - (placeholder)
 
