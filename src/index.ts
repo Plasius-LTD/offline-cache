@@ -677,63 +677,77 @@ self.addEventListener("activate", (event) => {
 
 async function openPermittedCache(cacheName, generation) {
   if (!permitted(generation)) return null;
-  const cache = await caches.open(cacheName);
-  if (!permitted(generation)) {
+  try {
+    const cache = await caches.open(cacheName);
+    if (permitted(generation)) return cache;
     await caches.delete(cacheName);
-    return null;
-  }
-  return cache;
+  } catch { /* Optional storage must not prevent online delivery. */ }
+  return null;
+}
+
+async function evictOptionalEntry(cache, request) {
+  try { await cache.delete(request); } catch { /* Never reuse an ineligible entry. */ }
+}
+
+async function readPermittedEntry(cache, request, generation) {
+  if (!cache || !permitted(generation)) return undefined;
+  try {
+    const candidate = await cache.match(request);
+    if (!permitted(generation)) return undefined;
+    if (candidate && !hasNoStore(candidate.headers)) return candidate;
+    if (candidate) await evictOptionalEntry(cache, request);
+  } catch { /* A failed read is an optional cache miss. */ }
+  return undefined;
+}
+
+async function updateOptionalEntry(cache, request, response, generation) {
+  if (!cache || !permitted(generation)) return;
+  try {
+    if (hasNoStore(response.headers)) await evictOptionalEntry(cache, request);
+    else if (response.ok) await cache.put(request, response.clone());
+  } catch { /* Quota and other storage failures do not replace the response. */ }
+}
+
+async function fetchOrError(request) {
+  try { return await fetch(request); } catch { return Response.error(); }
 }
 
 async function cacheFirst(request, cacheName, generation) {
   const cache = await openPermittedCache(cacheName, generation);
-  if (!cache) return fetch(request);
-  const cached = await cache.match(request);
-  if (!permitted(generation)) return fetch(request);
-  if (cached && !hasNoStore(cached.headers)) return cached;
-  if (cached) await cache.delete(request);
-  const response = await fetch(request);
-  if (!permitted(generation)) return response;
-  if (response.ok && !hasNoStore(response.headers)) await cache.put(request, response.clone());
-  if (hasNoStore(response.headers)) await cache.delete(request);
+  const cached = await readPermittedEntry(cache, request, generation);
+  if (cached && permitted(generation)) return cached;
+  const response = await fetchOrError(request);
+  await updateOptionalEntry(cache, request, response, generation);
   return response;
 }
 
 async function staleWhileRevalidate(request, cacheName, generation) {
   const cache = await openPermittedCache(cacheName, generation);
-  if (!cache) return fetch(request);
-  const candidate = await cache.match(request);
-  if (!permitted(generation)) return fetch(request);
-  const cached = candidate && !hasNoStore(candidate.headers) ? candidate : undefined;
-  if (candidate && !cached) await cache.delete(request);
-  const refresh = fetch(request).then(async response => {
-    if (!permitted(generation)) return response;
-    if (response.ok && !hasNoStore(response.headers)) await cache.put(request, response.clone());
-    if (hasNoStore(response.headers)) await cache.delete(request);
+  const cached = await readPermittedEntry(cache, request, generation);
+  const refresh = fetchOrError(request).then(async response => {
+    await updateOptionalEntry(cache, request, response, generation);
     return response;
   });
-  if (cached) void refresh.catch(() => undefined);
-  return cached || refresh;
+  if (cached && permitted(generation)) {
+    void refresh.catch(() => undefined);
+    return cached;
+  }
+  return refresh;
 }
 
 async function networkFirst(request, cacheName, generation) {
   const cache = await openPermittedCache(cacheName, generation);
-  if (!cache) return fetch(request);
+  let response;
   try {
-    const response = await fetch(request);
-    if (!permitted(generation)) return response;
-    if (response.ok && !hasNoStore(response.headers)) await cache.put(request, response.clone());
-    if (hasNoStore(response.headers)) await cache.delete(request);
-    return response;
+    response = await fetch(request);
   } catch {
-    if (!permitted(generation)) return Response.error();
-    const cached = await cache.match(request);
-    if (!permitted(generation)) return Response.error();
-    if (cached && !hasNoStore(cached.headers)) return cached;
-    if (cached) await cache.delete(request);
-    const fallback = await cache.match(NAVIGATION_FALLBACK_URL);
-    return permitted(generation) && fallback && !hasNoStore(fallback.headers) ? fallback : Response.error();
+    const cached = await readPermittedEntry(cache, request, generation);
+    if (cached && permitted(generation)) return cached;
+    const fallback = await readPermittedEntry(cache, NAVIGATION_FALLBACK_URL, generation);
+    return permitted(generation) && fallback ? fallback : Response.error();
   }
+  await updateOptionalEntry(cache, request, response, generation);
+  return response;
 }
 
 self.addEventListener("fetch", (event) => {

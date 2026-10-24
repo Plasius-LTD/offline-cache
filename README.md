@@ -127,3 +127,21 @@ paths always win; host and generated worker preserve regex source and flags.
 `warmAssetPack` propagates its `signal` to downloads and rejects with the abort
 reason before further cache access after cancellation, including late responses.
 Hosts should treat consent cancellation as a normal stop, not a renderer failure.
+
+## Optional storage failures
+
+Generated workers keep online responses usable when CacheStorage open, read,
+write or eviction operations reject, including quota failures. A failed read is a
+cache miss; a failed update cannot replace a successful network response with
+stale content. Each intercepted request makes at most one network attempt. When
+that attempt fails, only a currently permitted cached response/navigation fallback
+may be returned; otherwise the worker returns `Response.error()`.
+
+No-store entries remain ineligible even if eviction fails. Consent denial,
+expiry and withdrawal still prohibit cache reuse/updates. Storage failures do not
+produce provider-error logs or change the host's cleanup acknowledgement duties.
+This handles rejected storage operations; permanently pending operations and
+browser fetch lifetimes are unchanged. Stale refresh event-lifetime work is
+tracked separately. Hosts continue to compose stored
+`site.privacy.optional-processing.enabled` / `site.offline-cache.enabled` with
+visitor consent, and withdraw/unregister the worker when disabled.
