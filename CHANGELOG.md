@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.1.13] - 2026-11-22
+
 - Refresh supported npm dependency and security tooling baselines; preserve runtime API contracts (weekly maintenance, 2026-11-22).
 
 - **Added**
@@ -243,3 +257,4 @@
 [0.1.10]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.10
 [0.1.11]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.11
 [0.1.12]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.12
+[0.1.13]: https://github.com/Plasius-LTD/offline-cache/releases/tag/v0.1.13
